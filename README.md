@@ -2,14 +2,7 @@
 A sample microservice for handling digital wallet transactions, featuring Redis caching and message broker-based event handling.
 
 # Solution Structure 📦
-graph TD
-    A[digital-wallet-api] --> B[src]
-    A --> C[test]
-    B --> D[Api]
-    B --> E[Application]
-    B --> F[Core]
-    B --> G[Infrastructure]
-    C --> H[Tests]
+![deepseek_mermaid_20250501_0c3f4a](https://github.com/user-attachments/assets/bed32d7f-d775-4d5a-aa6d-4d011e7483fa)
 
 # Features 🚀
 User management
