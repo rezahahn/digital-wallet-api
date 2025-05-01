@@ -2,7 +2,8 @@
 A sample microservice for handling digital wallet transactions, featuring Redis caching and message broker-based event handling.
 
 # Solution Structure 📦
-![deepseek_mermaid_20250501_0c3f4a](https://github.com/user-attachments/assets/bed32d7f-d775-4d5a-aa6d-4d011e7483fa)
+![deepseek_mermaid_20250501_08f188](https://github.com/user-attachments/assets/3a0a0cef-8bb7-446b-9588-04c0683c7bb8)
+
 
 # Architecture Highlights 🚀
 - SOLID Principles
