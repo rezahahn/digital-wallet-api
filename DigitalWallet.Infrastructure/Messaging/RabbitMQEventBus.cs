@@ -13,6 +13,7 @@ namespace DigitalWallet.Infrastructure.Messaging
         private const string RetryHeader = "x-retry-count";
         private const string WorkQueue = "create_wallet_queue.work";
         private const string DeadLetterQueue = "create_wallet_queue.dead";
+        private const string PaymentNotificationStatusQueue = "payment_notifications_status";
 
         private readonly IRabbitMQConnection _connection;
         private readonly ILogger<RabbitMQEventBus> _logger;
@@ -47,6 +48,16 @@ namespace DigitalWallet.Infrastructure.Messaging
                 autoDelete: false,
                 arguments: null);
 
+            _consumerChannel.QueueDeclare(
+                queue: PaymentNotificationStatusQueue,
+                durable: true,
+                exclusive: false,
+                autoDelete: false,
+                arguments: new Dictionary<string, object>
+                {
+                    { "x-dead-letter-exchange", "dead_letter_exchange" }
+                });
+
             _consumerChannel.QueueBind(
                 queue: DeadLetterQueue,
                 exchange: "dead_letter_exchange",
@@ -76,12 +87,12 @@ namespace DigitalWallet.Infrastructure.Messaging
             properties.Persistent = true;
             properties.Headers = new Dictionary<string, object>
             {
-                { RetryHeader, 0 } // Inisialisasi retry count
+                { RetryHeader, 0 }
             };
 
             channel.BasicPublish(
                 exchange: "",
-                routingKey: WorkQueue,
+                routingKey: queueName,
                 basicProperties: properties,
                 body: body);
 
@@ -94,23 +105,20 @@ namespace DigitalWallet.Infrastructure.Messaging
 
             consumer.Received += async (model, ea) =>
             {
-                // Buat scope baru untuk setiap pesan
-                using (var scope = _serviceScopeFactory.CreateScope())
+                using var scope = _serviceScopeFactory.CreateScope();
+                try
                 {
-                    try
+                    var message = JsonSerializer.Deserialize<T>(ea.Body.Span);
+                    if (message != null)
                     {
-                        var message = JsonSerializer.Deserialize<T>(ea.Body.Span);
-                        if (message != null)
-                        {
-                            await handler(message);
-                            _consumerChannel.BasicAck(ea.DeliveryTag, false);
-                        }
+                        await handler(message);
+                        _consumerChannel.BasicAck(ea.DeliveryTag, false);
                     }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Error saat memproses pesan");
-                        HandleFailedMessage(ea);
-                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error saat memproses pesan");
+                    HandleFailedMessage(ea);
                 }
             };
 

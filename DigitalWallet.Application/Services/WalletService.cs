@@ -1,4 +1,5 @@
 ﻿using AutoMapper;
+using DigitalWallet.Application.DTOs.Messaging;
 using DigitalWallet.Application.DTOs.Wallet;
 using DigitalWallet.Application.DTOs.Wallet.Request;
 using DigitalWallet.Application.DTOs.Wallet.Response;
@@ -7,10 +8,9 @@ using DigitalWallet.Application.Interfaces;
 using DigitalWallet.Core.Entities;
 using DigitalWallet.Core.Exceptions;
 using DigitalWallet.Core.Interfaces;
-using Microsoft.EntityFrameworkCore;
+using DigitalWallet.Core.Interfaces.Messaging;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Logging;
-using System.Linq.Expressions;
 using System.Text.Json;
 
 namespace DigitalWallet.Application.Services
@@ -24,6 +24,7 @@ namespace DigitalWallet.Application.Services
         private readonly IMapper _mapper;
         private readonly ILogger<WalletService> _logger;
         private readonly IDistributedCache _cache;
+        private readonly IEventBus _eventBus;
 
         public WalletService(
             IWalletRepository walletRepository,
@@ -32,7 +33,8 @@ namespace DigitalWallet.Application.Services
             IUnitOfWork unitOfWork,
             IMapper mapper,
             ILogger<WalletService> logger,
-            IDistributedCache cache)
+            IDistributedCache cache,
+            IEventBus eventBus)
         {
             _walletRepository = walletRepository;
             _userRepository = userRepository;
@@ -41,6 +43,7 @@ namespace DigitalWallet.Application.Services
             _mapper = mapper;
             _logger = logger;
             _cache = cache;
+            _eventBus = eventBus;
         }
 
         public async Task<WalletDto?> GetWalletByUserIdAsync(int userId)
@@ -71,16 +74,13 @@ namespace DigitalWallet.Application.Services
             {
                 await _unitOfWork.BeginTransactionAsync();
 
-                // 1. Validasi user dan wallet
                 var wallet = await _walletRepository.GetByUserIdAsync(request.UserId);
                 if (wallet == null)
                     throw new WalletNotFoundException(request.UserId);
 
-                // 2. Proses top up
                 wallet.Balance += request.Amount;
                 wallet.LastUpdated = DateTime.UtcNow.ToLocalTime();
 
-                // 3. Catat transaksi
                 var transaction = new Transaction
                 {
                     WalletId = wallet.WalletId,
@@ -94,6 +94,19 @@ namespace DigitalWallet.Application.Services
 
                 await _transactionRepository.AddAsync(transaction);
                 await _unitOfWork.SaveChangesAsync();
+
+                _eventBus.Publish(queueName: "payment_notifications_status", message: new PaymentNotificationMessage
+                {
+                    TransactionId = transaction.TransactionId,
+                    UserId = request.UserId,
+                    Amount = request.Amount,
+                    Currency = "IDR",
+                    PaymentMethod = request.PaymentMethod,
+                    ReferenceNumber = transaction.ReferenceNumber,
+                    Status = "Success",
+                    Timestamp = DateTime.UtcNow.ToLocalTime(),
+                });
+
                 await _unitOfWork.CommitAsync();
 
                 return new TopUpResponse
@@ -105,9 +118,19 @@ namespace DigitalWallet.Application.Services
                     TransactionDate = transaction.TransactionDate
                 };
             }
-            catch
+            catch (Exception ex)
             {
                 await _unitOfWork.RollbackAsync();
+                _eventBus.Publish(queueName: "payment_notifications_status", message: new PaymentNotificationMessage
+                {
+                    UserId = request.UserId,
+                    Amount = request.Amount,
+                    Currency = "IDR",
+                    PaymentMethod = request.PaymentMethod,
+                    Timestamp = DateTime.UtcNow.ToLocalTime(),
+                    Status = "Failed",
+                    FailureReason = ex.Message
+                });
                 throw;
             }
         }
@@ -118,25 +141,20 @@ namespace DigitalWallet.Application.Services
             {
                 await _unitOfWork.BeginTransactionAsync();
 
-                // 1. Validasi pengirim
                 var fromWallet = await _walletRepository.GetByUserIdAsync(request.FromUserId);
                 if (fromWallet == null)
                     throw new WalletNotFoundException(request.FromUserId);
 
-                // 2. Validasi penerima
                 var toWallet = await _walletRepository.GetByUserIdAsync(request.ToUserId);
                 if (toWallet == null)
                     throw new WalletNotFoundException(request.ToUserId);
 
-                // 3. Validasi saldo
                 if (fromWallet.Balance < request.Amount)
                     throw new InsufficientBalanceException();
 
-                // 4. Proses transfer
                 fromWallet.Balance -= request.Amount;
                 toWallet.Balance += request.Amount;
 
-                // 5. Catat transaksi pengirim (OUT) dulu
                 var transactionFrom = new Transaction
                 {
                     WalletId = fromWallet.WalletId,
@@ -149,9 +167,8 @@ namespace DigitalWallet.Application.Services
                 };
 
                 await _transactionRepository.AddAsync(transactionFrom);
-                await _unitOfWork.SaveChangesAsync(); // Simpan dulu untuk mendapatkan TransactionId
+                await _unitOfWork.SaveChangesAsync();
 
-                // 6. Catat transaksi penerima (IN) dengan referensi ke transaksi OUT
                 var transactionTo = new Transaction
                 {
                     WalletId = toWallet.WalletId,
@@ -160,7 +177,7 @@ namespace DigitalWallet.Application.Services
                     Description = request.Description,
                     Status = "Completed",
                     ReferenceNumber = Guid.NewGuid().ToString(),
-                    RelatedTransactionId = transactionFrom.TransactionId, // Sekarang TransactionId sudah ada
+                    RelatedTransactionId = transactionFrom.TransactionId,
                     TransactionDate = DateTime.UtcNow.ToLocalTime()
                 };
 
