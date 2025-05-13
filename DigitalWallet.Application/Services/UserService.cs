@@ -110,7 +110,7 @@ namespace DigitalWallet.Application.Services
                 user.KYCVerified = true;
                 await _userRepository.UpdateAsync(user);
 
-                _eventBus.Publish("create_wallet_queue", new CreateWalletMessage
+                _eventBus.Publish("create_wallet_queue.work", new CreateWalletMessage
                 {
                     UserId = user.UserId
                 });

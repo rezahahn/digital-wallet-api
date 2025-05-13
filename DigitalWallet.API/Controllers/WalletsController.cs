@@ -1,11 +1,14 @@
 ﻿using DigitalWallet.Application.DTOs.Wallet.Request;
 using DigitalWallet.Application.Interfaces;
 using DigitalWallet.Core.Exceptions;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.ComponentModel.DataAnnotations;
 
 namespace DigitalWallet.API.Controllers;
 
-[ApiVersion("1.0")]
+[ApiController]
+[Route("api/v1/[controller]")]
 public class WalletsController : BaseApiController
 {
     private readonly IWalletService _walletService;
@@ -17,6 +20,26 @@ public class WalletsController : BaseApiController
 
     [HttpGet("{userId}")]
     public async Task<IActionResult> GetWallet(int userId)
+    {
+        try
+        {
+            var wallet = await _walletService.GetWalletByUserIdAsync(userId);
+            return ApiResponse(wallet, "Wallet data retrieved");
+        }
+        catch (UserNotFoundException ex)
+        {
+            return ApiError(ex.Message, StatusCodes.Status404NotFound);
+        }
+        catch (WalletNotFoundException ex)
+        {
+            return ApiError(ex.Message, StatusCodes.Status404NotFound);
+        }
+    }
+
+    [Authorize]
+    [Route("~/api/v2/[controller]")]
+    [HttpGet]
+    public async Task<IActionResult> GetWalletV2([FromQuery][Required] int userId)
     {
         try
         {

@@ -16,6 +16,9 @@ using DigitalWallet.Infrastructure.Messaging;
 using DigitalWallet.Application.DTOs.Messaging;
 using DigitalWallet.Application.EventHandlers;
 using DigitalWallet.Core.Interfaces.Messaging;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -25,19 +28,19 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-builder.Services.AddApiVersioning(options =>
-{
-    options.DefaultApiVersion = new ApiVersion(1, 0);
-    options.AssumeDefaultVersionWhenUnspecified = true;
-    options.ReportApiVersions = true;
-    options.ApiVersionReader = new UrlSegmentApiVersionReader();
-});
+//builder.Services.AddApiVersioning(options =>
+//{
+//    options.DefaultApiVersion = new ApiVersion(1, 0);
+//    options.AssumeDefaultVersionWhenUnspecified = true;
+//    options.ReportApiVersions = true;
+//    options.ApiVersionReader = new UrlSegmentApiVersionReader();
+//});
 
-builder.Services.AddVersionedApiExplorer(options =>
-{
-    options.GroupNameFormat = "'v'VVV";
-    options.SubstituteApiVersionInUrl = true;
-});
+//builder.Services.AddVersionedApiExplorer(options =>
+//{
+//    options.GroupNameFormat = "'v'VVV";
+//    options.SubstituteApiVersionInUrl = true;
+//});
 builder.Services.AddValidatorsFromAssemblyContaining<TopUpRequestValidator>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
@@ -55,6 +58,7 @@ builder.Services.AddScoped<ITransactionRepository, TransactionRepository>(); ;
 // (D) Register Services (Application Layer)
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IWalletService, WalletService>();
+builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 
 // (E) Helpers & Utilities
 builder.Services.AddScoped<IPasswordHelper, PasswordHelper>();
@@ -79,6 +83,27 @@ builder.Services.Configure<RabbitMQConfig>(builder.Configuration.GetSection("Rab
 builder.Services.AddSingleton<IRabbitMQConnection, RabbitMQConnection>();
 builder.Services.AddSingleton<IEventBus, RabbitMQEventBus>();
 builder.Services.AddScoped<WalletEventHandler>();
+
+// Konfigurasi JWT
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = builder.Configuration["Jwt:Issuer"],
+        ValidAudience = builder.Configuration["Jwt:Audience"],
+        IssuerSigningKey = new SymmetricSecurityKey(
+            Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]))
+    };
+});
 
 // ========== [2] Build & Middleware Setup ========== //
 var app = builder.Build();
@@ -115,6 +140,7 @@ if (app.Environment.IsDevelopment())
 
 // (B) Production Config
 app.UseHttpsRedirection();
+app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 

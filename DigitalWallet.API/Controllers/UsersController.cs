@@ -5,7 +5,8 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace DigitalWallet.API.Controllers;
 
-[ApiVersion("1.0")]
+[ApiController]
+[Route("api/v1/[controller]")]
 public class UsersController : BaseApiController
 {
     private readonly IUserService _userService;

@@ -2,8 +2,6 @@
 using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
 
-[ApiController]
-[Route("api/v{version:apiVersion}/[controller]")]
 public class BaseApiController : ControllerBase
 {
     protected IActionResult ApiResponse<T>(T data, string message = "", int statusCode = 200)
@@ -12,21 +10,19 @@ public class BaseApiController : ControllerBase
         {
             Success = statusCode >= 200 && statusCode < 300,
             Message = message,
-            Data = data,
-            Version = HttpContext.GetRequestedApiVersion()?.ToString() ?? "1.0"
+            Data = data
         };
 
         return StatusCode(statusCode, response);
     }
 
-    protected IActionResult ApiError(string errorMessage, int statusCode = 400, object additionalData = null)
+    protected IActionResult ApiError(string errorMessage, int statusCode = 400, object? additionalData = null)
     {
         var response = new
         {
             Success = false,
             Message = errorMessage,
-            Errors = additionalData,
-            Version = HttpContext.GetRequestedApiVersion()?.ToString() ?? "1.0"
+            Errors = additionalData
         };
 
         return StatusCode(statusCode, response);
